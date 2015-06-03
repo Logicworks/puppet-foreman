@@ -5,14 +5,17 @@ Puppet::Type.newtype(:foreman_hostgroup) do
 
   newparam(:name, :namevar => true) do
     desc 'The name of the hostgroup.'
+    isrequired
   end
 
   newparam(:base_url) do
     desc 'Foreman\'s base url.'
+    defaultto "https://localhost"
   end
 
   newparam(:effective_user) do
     desc 'Foreman\'s effective user for the registration (usually admin).'
+    defaultto "admin"
   end
 
   newparam(:consumer_key) do
