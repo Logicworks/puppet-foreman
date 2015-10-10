@@ -1,10 +1,10 @@
-Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
+require 'foreman_api'
 
-  confine :feature => :apipie_bindings
+Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
 
   def raise_error(e)
     body = JSON.parse(e.response)["error"]["full_messages"].join(" ") rescue 'N/A'
-    fail "Proxy #{resource[:name]} cannot be registered (#{e.message}): #{body}"
+    fail "Hostgroup #{resource[:name]} cannot be registered (#{e.message}): #{body}"
   end
 
   # when both rest and rest_v2 providers are installed, use this one
@@ -12,20 +12,102 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     super + 1
   end
 
-  def api
-    @api ||= ApipieBindings::API.new({
-      :uri => resource[:base_url],
-      :api_version => 2,
+  def hostgroups
+    @hostgroups ||= ForemanApi::Resources::Hostgroup.new({
+      :base_url => resource[:base_url],
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      },
-      :timeout => resource[:timeout],
+      }
+    },{
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
-    })
+      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
+    })    
+  end
+
+  def smartproxy=(value)
+    Puppet.send(:notice, "smartproxy: smartproxy_object = #{smartproxy_object}")
+    Puppet.send(:notice, "smartproxy: hostgroup = #{hostgroup}")
+    if smartproxy_object["id"]
+      hostgroups.update({ :id => id, :hostgroup => { :smartproxy_id => smartproxy_id}})
+    end
+  rescue Exception => e
+    raise_error e
+  end
+
+  def smartproxy_object
+    @smartproxy_object ||= ForemanApi::Resources::SmartProxy.new({
+      :base_url => resource[:base_url],
+      :oauth => {
+        :consumer_key    => resource[:consumer_key],
+        :consumer_secret => resource[:consumer_secret]
+      }
+    },{
+      :headers => {
+        :foreman_user => resource[:effective_user],
+      },
+      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
+    }).index(search: "name=#{resource[:smartproxy]}")[0]['results'][0]
+  end
+
+  def smartproxy_id
+    @smartproxy_id ? smartproxy_object["id"] : nil    
+  end
+
+  def smartproxy
+    @smartproxy ? smartproxy_object["name"] : nil
+  end
+
+  def environment_object
+    @environment_object ||= ForemanApi::Resources::Environment.new({
+      :base_url => resource[:base_url],
+      :oauth => {
+        :consumer_key    => resource[:consumer_key],
+        :consumer_secret => resource[:consumer_secret]
+      }
+    },{
+      :headers => {
+        :foreman_user => resource[:effective_user],
+      },
+      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
+    }).index(search: "name=#{resource[:environment]}")[0]['results'][0]
+  end
+
+  def environment_id
+    if environment_object
+      @environment_id ? environment_object["id"] : nil    
+    end
+  end
+
+  def environment
+    if environment_object
+      @environment ? environment_object["name"] : nil
+    end
+  end
+
+  def environment=(value)
+    if environment_id
+      hostgroups.update({ :id => id, :hostgroup => { :environment_id => environment_id}})
+    end
+  rescue Exception => e
+    raise_error e
+  end
+
+  def puppetclass
+    @puppetclass ||= ForemanApi::Resources::Puppetclass.new({
+      :base_url => resource[:base_url],
+      :oauth => {
+        :consumer_key    => resource[:consumer_key],
+        :consumer_secret => resource[:consumer_secret]
+      }
+    },{
+      :headers => {
+        :foreman_user => resource[:effective_user],
+      },
+      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
+    })    
   end
 
   # hostgroup hash or nil
@@ -33,7 +115,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     if @hostgroup
       @hostgroup
     else
-      @hostgroup = api.resource(:hostgroups).call(:index, :search => "name=#{resource[:name]}")['results'][0]
+      @hostgroup = hostgroups.index(:search => "name=#{resource[:name]}")[0]['results'][0]
     end
   rescue Exception => e
     raise_error e
@@ -48,7 +130,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def create
-    api.resource(:hostgroups).call(:create, {
+    hostgroups.create({
       :hostgroup => {
         :name => resource[:name]
       }
@@ -58,32 +140,15 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def destroy
-    api.resource(:hostgroups).call(:destroy, :id => id)
+    hostgroup.destroy(:id => id)
     @hostgroup = nil
   rescue Exception => e
     raise_error e
   end
 
-  def environment_id
-    hostgroup ? hostgroup['environment_id'] : nil
-  end
-
-  def environment_name
-    hostgroup ? hostgroup['environment_name'] : nil
-  end
-
-  def environment=(value)
-    set_environment = api.resource(:environments).call(:index, :search => "name=#{value}")['results'][0]
-
-    api.resource(:hostgroups).call(:update, { :id => id, :hostgroup => { :environment_id => set_environment[:id]})
-  rescue Exception => e
-    raise_error e
-  end
-
   def refresh_features!
-    api.resource(:hostgroups).call(:refresh, :id => id)
+    hostgroup.refresh(:id => id)
   rescue Exception => e
     raise_error e
   end
-
 end
