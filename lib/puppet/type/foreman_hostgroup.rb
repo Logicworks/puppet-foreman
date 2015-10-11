@@ -8,6 +8,19 @@ Puppet::Type.newtype(:foreman_hostgroup) do
     isrequired
   end
 
+  newproperty(:smartproxy) do
+    desc 'The name of the smartproxy to create the hostgroup in.'
+    isrequired
+  end  
+
+  newproperty(:environment) do
+    desc 'The name of the environment to set as default for the hostgroup.'
+  end  
+
+  newproperty(:puppetclass, :array_matching => :all) do
+    desc 'The name of the environment to set as default for the hostgroup.'
+  end 
+
   newparam(:base_url) do
     desc 'Foreman\'s base url.'
     defaultto "https://localhost"
@@ -26,11 +39,21 @@ Puppet::Type.newtype(:foreman_hostgroup) do
     desc 'Foreman oauth consumer_secret'
   end
 
-  #newproperty(:puppetclasses) do
-  #  desc 'The url of the hostgroup'
-  #  isrequired
-  #  newvalues(URI.regexp)
-  #end
+  newparam(:timeout) do
+    desc "Timeout for HTTP(s) requests"
+
+    munge do |value|
+      value = value.shift if value.is_a?(Array)
+      begin
+        value = Integer(value)
+      rescue ArgumentError
+        raise ArgumentError, "The timeout must be a number.", $!.backtrace
+      end
+      [value, 0].max
+    end
+
+    defaultto 500
+  end
 
   def refresh
     provider.refresh_features! if provider.respond_to?(:refresh_features!)
