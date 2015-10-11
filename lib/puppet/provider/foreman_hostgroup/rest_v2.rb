@@ -28,17 +28,13 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def smartproxy=(value)
-    Puppet.send(:notice, "smartproxy: smartproxy_object = #{smartproxy_object}")
-    Puppet.send(:notice, "smartproxy: hostgroup = #{hostgroup}")
-    if smartproxy_object["id"]
-      hostgroups.update({ :id => id, :hostgroup => { :smartproxy_id => smartproxy_id}})
-    end
+    hostgroups.update({ "id" => id, "hostgroup" => { "puppet_proxy_id" => smartproxy_object["id"]}})
   rescue Exception => e
     raise_error e
   end
 
-  def smartproxy_object
-    @smartproxy_object ||= ForemanApi::Resources::SmartProxy.new({
+  def smartproxies
+    @smartproxies ||= ForemanApi::Resources::SmartProxy.new({
       :base_url => resource[:base_url],
       :oauth => {
         :consumer_key    => resource[:consumer_key],
@@ -49,15 +45,24 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
         :foreman_user => resource[:effective_user],
       },
       :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    }).index(search: "name=#{resource[:smartproxy]}")[0]['results'][0]
+    })
   end
 
+  def smartproxy_object
+    smartproxies.index(search: "name=#{resource[:smartproxy]}")[0]['results'][0]
+  end
+
+  def current_smartproxy_object
+    smartproxies.index(search: "name=#{smartproxy_id}")[0]['results'][0]
+  end
+
+
   def smartproxy_id
-    @smartproxy_id ? smartproxy_object["id"] : nil    
+    @smartproxy_id ? hostgroup["puppet_proxy_id"] : nil    
   end
 
   def smartproxy
-    @smartproxy ? smartproxy_object["name"] : nil
+    @smartproxy ? current_smartproxy_object["id"] : nil
   end
 
   def environment_object
@@ -76,21 +81,15 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def environment_id
-    if environment_object
-      @environment_id ? environment_object["id"] : nil    
-    end
+    @hostgroup ? hostgroup["environment_id"] : nil
   end
 
   def environment
-    if environment_object
-      @environment ? environment_object["name"] : nil
-    end
+    @hostgroup ? hostgroup["environment_name"] : nil
   end
 
   def environment=(value)
-    if environment_id
-      hostgroups.update({ :id => id, :hostgroup => { :environment_id => environment_id}})
-    end
+    hostgroups.update({ "id" => id, "hostgroup" => { "environment_id" => environment_object["id"]}})
   rescue Exception => e
     raise_error e
   end
@@ -112,11 +111,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
 
   # hostgroup hash or nil
   def hostgroup
-    if @hostgroup
-      @hostgroup
-    else
-      @hostgroup = hostgroups.index(:search => "name=#{resource[:name]}")[0]['results'][0]
-    end
+    @hostgroup = hostgroups.index(:search => "name=#{resource[:name]}")[0]['results'][0]    # end
   rescue Exception => e
     raise_error e
   end
