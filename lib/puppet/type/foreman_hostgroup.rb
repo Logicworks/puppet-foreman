@@ -18,7 +18,7 @@ Puppet::Type.newtype(:foreman_hostgroup) do
   end  
 
   newproperty(:puppetclass, :array_matching => :all) do
-    desc 'The name of the environment to set as default for the hostgroup.'
+    desc 'Puppetclasses to associate with this hostgroup.'
   end 
 
   newparam(:base_url) do

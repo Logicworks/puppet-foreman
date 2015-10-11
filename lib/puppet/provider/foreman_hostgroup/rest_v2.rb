@@ -52,19 +52,17 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     smartproxies.index(search: "name=#{resource[:smartproxy]}")[0]['results'][0]
   end
 
-  def current_smartproxy_object
-    smartproxies.index(search: "name=#{smartproxy_id}")[0]['results'][0]
-  end
-
-
   def smartproxy_id
-    @smartproxy_id ? hostgroup["puppet_proxy_id"] : nil    
+    @hostgroup ? hostgroup["puppet_proxy_id"] : nil    
   end
 
   def smartproxy
-    @smartproxy ? current_smartproxy_object["id"] : nil
+    smartproxies.show("id" => hostgroup['puppet_proxy_id'])[0]["name"]
   end
 
+#
+#  Environment section
+#
   def environment_object
     @environment_object ||= ForemanApi::Resources::Environment.new({
       :base_url => resource[:base_url],
@@ -94,8 +92,8 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     raise_error e
   end
 
-  def puppetclass
-    @puppetclass ||= ForemanApi::Resources::Puppetclass.new({
+  def hostgroupclass_api
+    @hostgroupclass_api ||= ForemanApi::Resources::HostgroupClass.new({
       :base_url => resource[:base_url],
       :oauth => {
         :consumer_key    => resource[:consumer_key],
@@ -106,7 +104,65 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
         :foreman_user => resource[:effective_user],
       },
       :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    })    
+    })
+  end
+
+  def hostgroupclasses
+    @hostgroupclasses = hostgroupclass_api.index("hostgroup_id" => id)[0]["results"].inject({}){|h,c|
+      obj = puppetclass_object(c)
+      obj ? h.merge(obj["name"] => obj["id"]) : h
+    }
+  end
+
+  def puppetclass_api
+    if @puppetclass_api
+      @puppetclass_api
+    else
+      @puppetclass_api ||= ForemanApi::Resources::Puppetclass.new({
+        :base_url => resource[:base_url],
+        :oauth => {
+          :consumer_key    => resource[:consumer_key],
+          :consumer_secret => resource[:consumer_secret]
+        }
+      },{
+        :headers => {
+          :foreman_user => resource[:effective_user],
+        },
+        :verify_ssl => OpenSSL::SSL::VERIFY_NONE
+      })
+    end
+  end
+
+  def puppetclass_object(id)
+    puppetclass_api.show("id" => id)[0]
+  end
+
+  def puppetclass
+    hostgroupclasses.keys
+  end
+
+  def puppetclass=(classes)
+    class_ids = classes.inject([]){|a,c|
+      if puppetclass_object(c)
+        a.push puppetclass_object(c)["id"]
+      else
+        a
+      end
+    }
+
+    add    = class_ids - hostgroupclasses.values
+    remove = hostgroupclasses.values - class_ids
+
+    remove.each{|cid|
+      hostgroupclass_api.destroy({"id" => cid, "hostgroup_id" => id})
+    }
+
+    add.each{|cid|
+      hostgroupclass_api.create("puppetclass_id" => cid, "hostgroup_id" => id)
+    }
+
+  rescue Exception => e
+    raise_error e
   end
 
   # hostgroup hash or nil
