@@ -2,8 +2,6 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
 
   confine :feature => :apipie_bindings
 
-  require 'foreman_api'
-
   def raise_error(e)
     body = JSON.parse(e.response)["error"]["full_messages"].join(" ") rescue 'N/A'
     fail "Proxy #{resource[:name]} cannot be registered (#{e.message}): #{body}"
@@ -15,18 +13,19 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
   end
 
   def api
-    @api ||= ForemanApi::Resources::SmartProxy.new({
-      :base_url => resource[:base_url],
+    @api ||= ApipieBindings::API.new({
+      :uri => resource[:base_url],
+      :api_version => 2,
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      }
-    },{
+      },
+      :timeout => resource[:timeout],
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    })
+      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
+    }).resource(:smart_proxies)
   end
 
   # proxy hash or nil
@@ -34,7 +33,7 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
     if @proxy
       @proxy
     else
-      @proxy = api.index(:search => "name=#{resource[:name]}")[0]["results"][0]
+      @proxy = api.call(:index, :search => "name=#{resource[:name]}")['results'][0]
     end
   rescue Exception => e
     raise_error e
@@ -49,7 +48,7 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
   end
 
   def create
-    api.create({
+    api.call(:create, {
       :smart_proxy => {
         :name => resource[:name],
         :url  => resource[:url]
@@ -60,7 +59,7 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
   end
 
   def destroy
-    api.destroy(:id => id)
+    api.call(:destroy, :id => id)
     @proxy = nil
   rescue Exception => e
     raise_error e
@@ -71,13 +70,13 @@ Puppet::Type.type(:foreman_smartproxy).provide(:rest_v2) do
   end
 
   def url=(value)
-    api.update({ :id => id, :smart_proxy => { :url => value } })
+    api.call(:update, { :id => id, :smart_proxy => { :url => value } })
   rescue Exception => e
     raise_error e
   end
 
   def refresh_features!
-    api.refresh(:id => id)
+    api.call(:refresh, :id => id)
   rescue Exception => e
     raise_error e
   end
