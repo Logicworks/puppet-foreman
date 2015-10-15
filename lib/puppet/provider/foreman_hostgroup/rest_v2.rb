@@ -1,6 +1,6 @@
-require 'foreman_api'
-
 Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
+
+  confine :feature => :apipie_bindings
 
   def raise_error(e)
     body = JSON.parse(e.response)["error"]["full_messages"].join(" ") rescue 'N/A'
@@ -12,20 +12,22 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     super + 1
   end
 
-  def hostgroups
-    @hostgroups ||= ForemanApi::Resources::Hostgroup.new({
-      :base_url => resource[:base_url],
+  def api
+    @api ||= ApipieBindings::API.new({
+      :uri => resource[:base_url],
+      :api_version => 2,
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      }
-    },{
+      },
+      :timeout => resource[:timeout],
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    })    
+      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
+    })
   end
+
 
   def smartproxy=(value)
     hostgroups.update({ "id" => id, "hostgroup" => { "puppet_proxy_id" => smartproxy_object["id"]}})
@@ -34,22 +36,23 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def smartproxies
-    @smartproxies ||= ForemanApi::Resources::SmartProxy.new({
-      :base_url => resource[:base_url],
+    @smartproxies ||= ApipieBindings::API.new({
+      :uri => resource[:base_url],
+      :api_version => 2,
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      }
-    },{
+      },
+      :timeout => resource[:timeout],
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    })
+      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
+    }).resource(:smart_proxies)
   end
 
   def smartproxy_object
-    smartproxies.index(search: "name=#{resource[:smartproxy]}")[0]['results'][0]
+    smartproxies.(:index, search: "name=#{resource[:smartproxy]}")['results'][0]
   end
 
   def smartproxy_id
@@ -64,18 +67,19 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
 #  Environment section
 #
   def environment_object
-    @environment_object ||= ForemanApi::Resources::Environment.new({
-      :base_url => resource[:base_url],
+    @environment_object ||= ApipieBindings::API.new({
+      :uri => resource[:base_url],
+      :api_version => 2,
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      }
-    },{
+      },
+      :timeout => resource[:timeout],
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    }).index(search: "name=#{resource[:environment]}")[0]['results'][0]
+      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
+    }).resource(:environments).call(:index, search: "name=#{resource[:environment]}")['results'][0]
   end
 
   def environment_id
@@ -87,28 +91,29 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def environment=(value)
-    hostgroups.update({ "id" => id, "hostgroup" => { "environment_id" => environment_object["id"]}})
+    hostgroups.call(:update, { :id => id, :hostgroup => { :environment_id => environment_object[:id]}})
   rescue Exception => e
     raise_error e
   end
 
   def hostgroupclass_api
-    @hostgroupclass_api ||= ForemanApi::Resources::HostgroupClass.new({
-      :base_url => resource[:base_url],
+    @hostgroupclass_api ||= ApipieBindings::API.new({
+      :uri => resource[:base_url],
+      :api_version => 2,
       :oauth => {
         :consumer_key    => resource[:consumer_key],
         :consumer_secret => resource[:consumer_secret]
-      }
-    },{
+      },
+      :timeout => resource[:timeout],
       :headers => {
         :foreman_user => resource[:effective_user],
       },
-      :verify_ssl => OpenSSL::SSL::VERIFY_NONE
-    })
+      :apidoc_cache_base_dir => File.join(Puppet[:vardir], 'apipie_bindings')
+    }).resource(:host_classes)
   end
 
   def hostgroupclasses
-    @hostgroupclasses = hostgroupclass_api.index("hostgroup_id" => id)[0]["results"].inject({}){|h,c|
+    @hostgroupclasses = hostgroupclass_api.call(:index, "hostgroup_id" => id)[0]["results"].inject({}){|h,c|
       obj = puppetclass_object(c)
       obj ? h.merge(obj["name"] => obj["id"]) : h
     }
@@ -134,7 +139,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def puppetclass_object(id)
-    puppetclass_api.show("id" => id)[0]
+    puppetclass_api.call(:show, :id => id)
   end
 
   def puppetclass
@@ -154,20 +159,24 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
     remove = hostgroupclasses.values - class_ids
 
     remove.each{|cid|
-      hostgroupclass_api.destroy({"id" => cid, "hostgroup_id" => id})
+      hostgroupclass_api.call(:destroy, {"id" => cid, "hostgroup_id" => id})
     }
 
     add.each{|cid|
-      hostgroupclass_api.create("puppetclass_id" => cid, "hostgroup_id" => id)
+      hostgroupclass_api.call(:create, "puppetclass_id" => cid, "hostgroup_id" => id)
     }
 
   rescue Exception => e
     raise_error e
   end
 
+  def hostgroups
+    @hostgroups = api.resource(:hostgroups)
+  end
+
   # hostgroup hash or nil
   def hostgroup
-    @hostgroup = hostgroups.index(:search => "name=#{resource[:name]}")[0]['results'][0]    # end
+    @hostgroup = hostgroups.call(:index, :search => "name=#{resource[:name]}")[0]['results'][0]    # end
   rescue Exception => e
     raise_error e
   end
@@ -181,7 +190,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def create
-    hostgroups.create({
+    hostgroups.call(:create, {
       :hostgroup => {
         :name => resource[:name]
       }
@@ -191,7 +200,7 @@ Puppet::Type.type(:foreman_hostgroup).provide(:rest_v2) do
   end
 
   def destroy
-    hostgroup.destroy(:id => id)
+    hostgroups.call(:destroy, :id => id)
     @hostgroup = nil
   rescue Exception => e
     raise_error e

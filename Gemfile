@@ -19,7 +19,6 @@ gem 'puppet-lint-leading_zero-check'
 gem 'puppet-lint-trailing_comma-check'
 gem 'puppet-lint-file_ensure-check'
 gem 'puppet-lint-param-docs', '>= 1.3.0'
-gem 'foreman_api'
 gem 'simplecov'
 gem 'puppet-blacksmith', '>= 3.1.0', {"groups"=>["development"]}
 gem 'rest-client', '< 1.7', {"platforms"=>["ruby_18"], "groups"=>["development"]}
